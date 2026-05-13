@@ -1,261 +1,311 @@
-// firebase-manager.js
-// Firebase Auth + Realtime Database işlemleri
+// firebase-manager.js — v2
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
-  getAuth,
-  signInAnonymously,
-  updateProfile,
-  onAuthStateChanged
+  getAuth, signInAnonymously, updateProfile, onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import {
-  getDatabase,
-  ref,
-  set,
-  get,
-  push,
-  update,
-  remove,
-  onValue,
-  onDisconnect,
-  serverTimestamp,
-  off
+  getDatabase, ref, set, get, push, update, remove,
+  onValue, onDisconnect, serverTimestamp, off
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 import { firebaseConfig } from "./firebase-config.js";
 
-// --- Init ---
-const app = initializeApp(firebaseConfig);
+const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = getDatabase(app);
+const db   = getDatabase(app);
 
-// Renk paleti (oyuncular için)
-const PLAYER_COLORS = [
-  "#E85D04", "#3A86FF", "#8338EC", "#06D6A0",
-  "#FF006E", "#FFBE0B", "#FB5607", "#43AA8B"
+export const PLAYER_COLORS = [
+  "#E85D04","#3A86FF","#8338EC","#06D6A0",
+  "#FF006E","#FFBE0B","#FB5607","#43AA8B"
 ];
 
-// --- Auth ---
+export const STARTING_BUDGET = 50000;
+export const EXPAND_COST     = 20000;
+
+// ── AUTH ──────────────────────────────────────────────────────────────────────
 export async function signIn(displayName) {
   const cred = await signInAnonymously(auth);
   await updateProfile(cred.user, { displayName });
   await set(ref(db, `users/${cred.user.uid}`), {
-    displayName,
-    currentRoom: null,
-    lastSeen: serverTimestamp()
+    displayName, currentRoom: null, lastSeen: serverTimestamp()
   });
   return cred.user;
 }
+export function onAuthChange(cb) { return onAuthStateChanged(auth, cb); }
+export function getCurrentUser() { return auth.currentUser; }
 
-export function onAuthChange(callback) {
-  return onAuthStateChanged(auth, callback);
-}
-
-export function getCurrentUser() {
-  return auth.currentUser;
-}
-
-// --- Oda işlemleri ---
-
-// Oda oluştur
+// ── ODA ───────────────────────────────────────────────────────────────────────
 export async function createRoom(roomName, maxPlayers = 4) {
   const user = auth.currentUser;
   if (!user) throw new Error("Giriş yapılmamış");
-
   const roomRef = push(ref(db, "rooms"));
-  const roomId = roomRef.key;
-  const color = PLAYER_COLORS[0];
-
-  const roomData = {
-    meta: {
-      name: roomName,
-      host: user.uid,
-      status: "waiting",
-      createdAt: serverTimestamp(),
-      maxPlayers
-    },
+  const roomId  = roomRef.key;
+  await set(roomRef, {
+    meta: { name: roomName, host: user.uid, status: "waiting",
+            createdAt: serverTimestamp(), maxPlayers },
     players: {
-      [user.uid]: {
-        name: user.displayName,
-        color,
-        ready: false,
-        joinedAt: serverTimestamp()
-      }
+      [user.uid]: { name: user.displayName, color: PLAYER_COLORS[0],
+                    ready: false, joinedAt: serverTimestamp() }
     }
-  };
-
-  await set(roomRef, roomData);
+  });
   await update(ref(db, `users/${user.uid}`), { currentRoom: roomId });
-
-  // Oyuncu çıkarsa player kaydını sil
-  const playerRef = ref(db, `rooms/${roomId}/players/${user.uid}`);
-  onDisconnect(playerRef).remove();
-
+  onDisconnect(ref(db, `rooms/${roomId}/players/${user.uid}`)).remove();
   return roomId;
 }
 
-// Odaya katıl
 export async function joinRoom(roomId) {
   const user = auth.currentUser;
   if (!user) throw new Error("Giriş yapılmamış");
-
-  // Oda var mı?
-  const roomSnap = await get(ref(db, `rooms/${roomId}/meta`));
-  if (!roomSnap.exists()) throw new Error("Oda bulunamadı");
-
-  const meta = roomSnap.val();
-  if (meta.status !== "waiting") throw new Error("Oyun başlamış, katılamazsın");
-
-  // Kaç oyuncu var?
+  const metaSnap = await get(ref(db, `rooms/${roomId}/meta`));
+  if (!metaSnap.exists()) throw new Error("Oda bulunamadı");
+  const meta = metaSnap.val();
+  if (meta.status !== "waiting") throw new Error("Oyun başlamış");
   const playersSnap = await get(ref(db, `rooms/${roomId}/players`));
-  const playerCount = playersSnap.exists() ? Object.keys(playersSnap.val()).length : 0;
-  if (playerCount >= meta.maxPlayers) throw new Error("Oda dolu");
-
-  // Renk ata (kullanılmayan)
-  const usedColors = playersSnap.exists()
-    ? Object.values(playersSnap.val()).map(p => p.color)
-    : [];
-  const color = PLAYER_COLORS.find(c => !usedColors.includes(c)) || PLAYER_COLORS[playerCount % PLAYER_COLORS.length];
-
+  const existing    = playersSnap.exists() ? playersSnap.val() : {};
+  const count       = Object.keys(existing).length;
+  if (count >= meta.maxPlayers) throw new Error("Oda dolu");
+  const usedColors  = Object.values(existing).map(p => p.color);
+  const color = PLAYER_COLORS.find(c => !usedColors.includes(c)) || PLAYER_COLORS[count % PLAYER_COLORS.length];
   await set(ref(db, `rooms/${roomId}/players/${user.uid}`), {
-    name: user.displayName,
-    color,
-    ready: false,
-    joinedAt: serverTimestamp()
+    name: user.displayName, color, ready: false, joinedAt: serverTimestamp()
   });
-
   await update(ref(db, `users/${user.uid}`), { currentRoom: roomId });
-
-  const playerRef = ref(db, `rooms/${roomId}/players/${user.uid}`);
-  onDisconnect(playerRef).remove();
-
+  onDisconnect(ref(db, `rooms/${roomId}/players/${user.uid}`)).remove();
   return roomId;
 }
 
-// Odadan çık
 export async function leaveRoom(roomId) {
   const user = auth.currentUser;
   if (!user) return;
-
   await remove(ref(db, `rooms/${roomId}/players/${user.uid}`));
   await update(ref(db, `users/${user.uid}`), { currentRoom: null });
-
-  // Kalan oyuncular var mı?
-  const playersSnap = await get(ref(db, `rooms/${roomId}/players`));
-  if (!playersSnap.exists()) {
-    // Oda boşaldı, sil
+  const snap = await get(ref(db, `rooms/${roomId}/players`));
+  if (!snap.exists()) {
     await remove(ref(db, `rooms/${roomId}`));
   } else {
-    // Host gittiyse yeni host ata
     const metaSnap = await get(ref(db, `rooms/${roomId}/meta`));
-    if (metaSnap.val().host === user.uid) {
-      const newHost = Object.keys(playersSnap.val())[0];
-      await update(ref(db, `rooms/${roomId}/meta`), { host: newHost });
-    }
+    if (metaSnap.val().host === user.uid)
+      await update(ref(db, `rooms/${roomId}/meta`), { host: Object.keys(snap.val())[0] });
   }
 }
 
-// Hazır durumunu toggle et
 export async function setReady(roomId, ready) {
   const user = auth.currentUser;
   if (!user) return;
   await update(ref(db, `rooms/${roomId}/players/${user.uid}`), { ready });
 }
 
-// Oyunu başlat (sadece host)
+// ── OYUN BAŞLAT ───────────────────────────────────────────────────────────────
 export async function startGame(roomId) {
-  const user = auth.currentUser;
+  const user     = auth.currentUser;
   const metaSnap = await get(ref(db, `rooms/${roomId}/meta`));
   if (metaSnap.val().host !== user.uid) throw new Error("Sadece host başlatabilir");
 
   const playersSnap = await get(ref(db, `rooms/${roomId}/players`));
-  const players = playersSnap.val();
-  const allReady = Object.values(players).every(p => p.ready || p.name === user.displayName);
+  const players     = playersSnap.val();
+  const budgets = {};
+  Object.keys(players).forEach(uid => { budgets[uid] = STARTING_BUDGET; });
 
-  // Host ready olmasa bile başlatabilir ama en az 1 başka oyuncu hazır olmalı
-  await update(ref(db, `rooms/${roomId}/meta`), {
-    status: "playing",
-    startedAt: serverTimestamp()
-  });
-
-  // Başlangıç oyun state'i
+  await update(ref(db, `rooms/${roomId}/meta`), { status: "playing", startedAt: serverTimestamp() });
   await set(ref(db, `rooms/${roomId}/gameState`), {
-    turn: 0,
-    budget: 50000,
-    population: 0,
-    happiness: 80,
-    grid: {},           // tile placements
-    lastAction: null
+    gridSize:         20,
+    tiles:            {},
+    budgets,
+    fund:             { balance: 0, expansionFund: 0 },
+    demolishRequests: {},
+    pendingExpansion: null
   });
 }
 
-// --- Gerçek zamanlı dinleyiciler ---
+// ── TİLE ──────────────────────────────────────────────────────────────────────
+export async function placeTile(roomId, x, y, tileType, cost) {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Giriş yapılmamış");
+  const key = `${x},${y}`;
 
-// Tüm odaları listele (lobby)
-export function listenToRooms(callback) {
-  const roomsRef = ref(db, "rooms");
-  const unsub = onValue(roomsRef, (snap) => {
-    const rooms = [];
-    if (snap.exists()) {
-      snap.forEach(child => {
-        const data = child.val();
-        if (data.meta && data.meta.status === "waiting") {
-          const playerCount = data.players ? Object.keys(data.players).length : 0;
-          rooms.push({
-            id: child.key,
-            name: data.meta.name,
-            host: data.meta.host,
-            playerCount,
-            maxPlayers: data.meta.maxPlayers,
-            createdAt: data.meta.createdAt
-          });
-        }
-      });
+  const gsSnap = await get(ref(db, `rooms/${roomId}/gameState`));
+  const gs = gsSnap.val();
+  const budget = gs.budgets?.[user.uid] ?? 0;
+  if (budget < cost) throw new Error(`Yetersiz bütçe (${budget.toLocaleString()}₺ / ${cost.toLocaleString()}₺)`);
+  if (gs.tiles?.[key]) throw new Error("Bu alanda zaten bir yapı var");
+
+  await update(ref(db, `rooms/${roomId}/gameState`), {
+    [`tiles/${key}`]: {
+      type: tileType, ownerId: user.uid, ownerName: user.displayName,
+      builtAt: serverTimestamp(), building: true, level: 1
+    },
+    [`budgets/${user.uid}`]: budget - cost
+  });
+  return key;
+}
+
+export async function finishBuilding(roomId, key) {
+  await update(ref(db, `rooms/${roomId}/gameState/tiles/${key}`), { building: false });
+}
+
+// ── YIKIM ─────────────────────────────────────────────────────────────────────
+export async function demolishOwn(roomId, x, y) {
+  const user = auth.currentUser;
+  const key  = `${x},${y}`;
+  const tileSnap = await get(ref(db, `rooms/${roomId}/gameState/tiles/${key}`));
+  if (!tileSnap.exists()) throw new Error("Tile bulunamadı");
+  if (tileSnap.val().ownerId !== user.uid) throw new Error("Bu yapı sana ait değil");
+  await remove(ref(db, `rooms/${roomId}/gameState/tiles/${key}`));
+}
+
+export async function requestDemolish(roomId, x, y) {
+  const user = auth.currentUser;
+  const key  = `${x},${y}`;
+  const tileSnap = await get(ref(db, `rooms/${roomId}/gameState/tiles/${key}`));
+  if (!tileSnap.exists()) throw new Error("Tile bulunamadı");
+  const tile = tileSnap.val();
+  if (tile.ownerId === user.uid) throw new Error("Kendi tile'ını direkt yıkabilirsin");
+  const reqId = `${user.uid}_${x}_${y}`;
+  await set(ref(db, `rooms/${roomId}/gameState/demolishRequests/${reqId}`), {
+    requesterUid: user.uid, requesterName: user.displayName,
+    targetUid: tile.ownerId, tileKey: key, tileType: tile.type,
+    status: "pending", createdAt: serverTimestamp()
+  });
+}
+
+export async function respondDemolish(roomId, reqId, accept) {
+  const user   = auth.currentUser;
+  const reqRef = ref(db, `rooms/${roomId}/gameState/demolishRequests/${reqId}`);
+  const snap   = await get(reqRef);
+  if (!snap.exists()) throw new Error("İstek bulunamadı");
+  const req = snap.val();
+  if (req.targetUid !== user.uid) throw new Error("Bu istek sana değil");
+  if (accept) {
+    await remove(ref(db, `rooms/${roomId}/gameState/tiles/${req.tileKey}`));
+    await remove(reqRef);
+  } else {
+    await update(reqRef, { status: "rejected" });
+    setTimeout(() => remove(reqRef), 4000);
+  }
+}
+
+// ── FON BİNASI ────────────────────────────────────────────────────────────────
+export async function transferToFund(roomId, amount) {
+  const user = auth.currentUser;
+  const gsSnap = await get(ref(db, `rooms/${roomId}/gameState`));
+  const gs = gsSnap.val();
+  const myBudget = gs.budgets?.[user.uid] ?? 0;
+  if (myBudget < amount) throw new Error("Yetersiz bütçe");
+  await update(ref(db, `rooms/${roomId}/gameState`), {
+    [`budgets/${user.uid}`]: myBudget - amount,
+    "fund/balance": (gs.fund?.balance ?? 0) + amount
+  });
+}
+
+export async function transferFromFund(roomId, toUid, amount) {
+  const gsSnap = await get(ref(db, `rooms/${roomId}/gameState`));
+  const gs = gsSnap.val();
+  const bal = gs.fund?.balance ?? 0;
+  if (bal < amount) throw new Error("Fonda yeterli para yok");
+  await update(ref(db, `rooms/${roomId}/gameState`), {
+    "fund/balance": bal - amount,
+    [`budgets/${toUid}`]: (gs.budgets?.[toUid] ?? 0) + amount
+  });
+}
+
+export async function transferBetweenPlayers(roomId, toUid, amount) {
+  const user = auth.currentUser;
+  const gsSnap = await get(ref(db, `rooms/${roomId}/gameState`));
+  const gs = gsSnap.val();
+  const from = gs.budgets?.[user.uid] ?? 0;
+  if (from < amount) throw new Error("Yetersiz bütçe");
+  await update(ref(db, `rooms/${roomId}/gameState`), {
+    [`budgets/${user.uid}`]: from - amount,
+    [`budgets/${toUid}`]:    (gs.budgets?.[toUid] ?? 0) + amount
+  });
+}
+
+export async function addToExpansionFund(roomId, amount) {
+  const user = auth.currentUser;
+  const gsSnap = await get(ref(db, `rooms/${roomId}/gameState`));
+  const gs = gsSnap.val();
+  const myBudget = gs.budgets?.[user.uid] ?? 0;
+  if (myBudget < amount) throw new Error("Yetersiz bütçe");
+  await update(ref(db, `rooms/${roomId}/gameState`), {
+    [`budgets/${user.uid}`]: myBudget - amount,
+    "fund/expansionFund": (gs.fund?.expansionFund ?? 0) + amount
+  });
+}
+
+// ── ŞEHİR GENİŞLETME ─────────────────────────────────────────────────────────
+export async function requestExpansion(roomId, direction) {
+  const user = auth.currentUser;
+  const gsSnap = await get(ref(db, `rooms/${roomId}/gameState`));
+  const gs = gsSnap.val();
+  if ((gs.fund?.expansionFund ?? 0) < EXPAND_COST)
+    throw new Error(`Expansion fonu yetersiz. Gereken: ${EXPAND_COST.toLocaleString()}₺`);
+  if (gs.pendingExpansion)
+    throw new Error("Zaten bekleyen bir genişletme isteği var");
+
+  const playersSnap = await get(ref(db, `rooms/${roomId}/players`));
+  const votes = {};
+  Object.keys(playersSnap.val()).forEach(uid => { votes[uid] = uid === user.uid; });
+
+  await update(ref(db, `rooms/${roomId}/gameState`), {
+    pendingExpansion: {
+      direction, cost: EXPAND_COST, requestedBy: user.uid,
+      requestedByName: user.displayName, votes, createdAt: serverTimestamp()
     }
+  });
+}
+
+export async function voteExpansion(roomId, approve) {
+  const user = auth.currentUser;
+  await update(ref(db, `rooms/${roomId}/gameState/pendingExpansion/votes`), { [user.uid]: approve });
+
+  const [pendingSnap, playersSnap] = await Promise.all([
+    get(ref(db, `rooms/${roomId}/gameState/pendingExpansion`)),
+    get(ref(db, `rooms/${roomId}/players`))
+  ]);
+  const pending     = pendingSnap.val();
+  const totalP      = Object.keys(playersSnap.val()).length;
+  const allVotes    = Object.values(pending.votes);
+  if (allVotes.length < totalP) return; // Herkese bekliyoruz
+
+  if (allVotes.every(v => v)) {
+    // Onaylandı
+    const gsSnap = await get(ref(db, `rooms/${roomId}/gameState`));
+    const gs = gsSnap.val();
+    await update(ref(db, `rooms/${roomId}/gameState`), {
+      gridSize: gs.gridSize + 4,
+      "fund/expansionFund": (gs.fund?.expansionFund ?? 0) - pending.cost,
+      pendingExpansion: null
+    });
+  } else {
+    await remove(ref(db, `rooms/${roomId}/gameState/pendingExpansion`));
+  }
+}
+
+// ── DİNLEYİCİLER ─────────────────────────────────────────────────────────────
+export function listenToRooms(callback) {
+  const r = ref(db, "rooms");
+  onValue(r, snap => {
+    const rooms = [];
+    if (snap.exists()) snap.forEach(child => {
+      const d = child.val();
+      if (d.meta?.status === "waiting")
+        rooms.push({ id: child.key, name: d.meta.name, host: d.meta.host,
+          playerCount: d.players ? Object.keys(d.players).length : 0,
+          maxPlayers: d.meta.maxPlayers });
+    });
     callback(rooms);
   });
-  return () => off(roomsRef, "value", unsub);
+  return () => off(r);
 }
 
-// Belirli bir odayı dinle (bekleme odası)
 export function listenToRoom(roomId, callback) {
-  const roomRef = ref(db, `rooms/${roomId}`);
-  const unsub = onValue(roomRef, (snap) => {
-    if (snap.exists()) {
-      callback(snap.val());
-    } else {
-      callback(null); // Oda silindi
-    }
-  });
-  return () => off(roomRef, "value", unsub);
+  const r = ref(db, `rooms/${roomId}`);
+  onValue(r, snap => callback(snap.exists() ? snap.val() : null));
+  return () => off(r);
 }
 
-// Oyun state'ini dinle
 export function listenToGameState(roomId, callback) {
-  const gsRef = ref(db, `rooms/${roomId}/gameState`);
-  const unsub = onValue(gsRef, (snap) => {
-    if (snap.exists()) callback(snap.val());
-  });
-  return () => off(gsRef, "value", unsub);
-}
-
-// Oyun state'ini güncelle (bir tile koy vb.)
-export async function updateGameState(roomId, updates) {
-  await update(ref(db, `rooms/${roomId}/gameState`), {
-    ...updates,
-    lastAction: {
-      by: auth.currentUser?.uid,
-      at: serverTimestamp()
-    }
-  });
-}
-
-// Save (Firestore yerine Realtime DB'de saklıyoruz, basit tutmak için)
-export async function saveCity(roomId) {
-  const gsSnap = await get(ref(db, `rooms/${roomId}/gameState`));
-  const metaSnap = await get(ref(db, `rooms/${roomId}/meta`));
-  await update(ref(db, `rooms/${roomId}/meta`), {
-    lastSaved: serverTimestamp(),
-    savedBy: auth.currentUser?.uid
-  });
-  return { gameState: gsSnap.val(), meta: metaSnap.val() };
+  const r = ref(db, `rooms/${roomId}/gameState`);
+  onValue(r, snap => { if (snap.exists()) callback(snap.val()); });
+  return () => off(r);
 }
