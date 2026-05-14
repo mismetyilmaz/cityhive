@@ -90,11 +90,6 @@ function centerCamera() {
 }
 
 // ── RENDER ────────────────────────────────────────────────────────────────────
-function loop() {
-  render();
-  requestAnimationFrame(loop);
-}
-
 function render() {
   if (!ctx) return;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -489,8 +484,6 @@ function updateBuildQueues() {
   }
 }
 
-// Loop'a queue güncelleme ekle
-const _origLoop = loop;
 function loop() {
   updateBuildQueues();
   render();
