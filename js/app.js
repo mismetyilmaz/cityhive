@@ -63,7 +63,21 @@ function showLobby() {
   showScreen("lobby");
   document.getElementById("lobby-username").textContent = currentUser.displayName;
   if (unsubRooms) unsubRooms();
-  unsubRooms = listenToRooms(renderRoomList);
+  unsubRooms = listenToRooms(renderRoomList, (err) => {
+    const list = document.getElementById("room-list");
+    if (list) list.innerHTML = `
+      <div class="empty-state">
+        <div style="font-size:2rem;margin-bottom:8px;">⚠️</div>
+        <div style="color:var(--danger);font-weight:600;margin-bottom:6px;">Firebase bağlantı hatası</div>
+        <div style="font-size:11px;color:var(--text2);line-height:1.6;">
+          ${err.code === "PERMISSION_DENIED"
+            ? "Veritabanı izin reddedildi.<br>Firebase Console → Realtime Database → Rules kısmını kontrol et."
+            : "Bağlantı kurulamadı: " + err.message}
+        </div>
+        <button class="btn btn-ghost" style="margin-top:12px;font-size:12px;" onclick="location.reload()">Yeniden Dene</button>
+      </div>`;
+    toast(err.code === "PERMISSION_DENIED" ? "DB izni yok — Firebase kurallarını kontrol et" : "Bağlantı hatası", "error");
+  });
 }
 
 function renderRoomList(rooms) {

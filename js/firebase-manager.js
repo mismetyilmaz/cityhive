@@ -282,7 +282,7 @@ export async function voteExpansion(roomId, approve) {
 }
 
 // ── DİNLEYİCİLER ─────────────────────────────────────────────────────────────
-export function listenToRooms(callback) {
+export function listenToRooms(callback, onError) {
   const r = ref(db, "rooms");
   onValue(r, snap => {
     const rooms = [];
@@ -294,6 +294,9 @@ export function listenToRooms(callback) {
           maxPlayers: d.meta.maxPlayers });
     });
     callback(rooms);
+  }, err => {
+    console.error("listenToRooms error:", err);
+    if (onError) onError(err);
   });
   return () => off(r);
 }
