@@ -186,27 +186,14 @@ input::placeholder { color: var(--text2); }
 }
 
 /* --- Lobby layout --- */
-.lobby-body {
-  flex: 1;
-  display: grid;
-  grid-template-columns: 1fr 320px;
-  gap: 0;
-  overflow: hidden;
-}
-
 .rooms-panel {
-  padding: 1.5rem;
+  flex: 1;
+  padding: 1.25rem 1.5rem;
   overflow-y: auto;
-  border-right: 1px solid var(--border);
 }
 
-.side-panel {
-  padding: 1.5rem;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
+/* side-panel artık kullanılmıyor ama eski kodla uyumluluk için */
+.side-panel { display: none; }
 
 .panel-title {
   font-size: 11px;
@@ -481,8 +468,8 @@ input::placeholder { color: var(--text2); }
 
 /* --- Responsive --- */
 @media (max-width: 640px) {
-  .lobby-body { grid-template-columns: 1fr; }
-  .side-panel { display: none; }
   .waiting-body { grid-template-columns: 1fr; }
   #game-toolbar { padding: 6px 8px; gap: 4px; }
+  #lobby-actions { flex-direction: column; }
+  #lobby-actions .btn { width: 100%; }
 }
