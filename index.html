@@ -44,7 +44,10 @@
       background: var(--bg2);
       border-top: 1px solid var(--border);
       flex-shrink: 0;
-      overflow-x: auto;
+      flex-wrap: wrap;          /* ← ekle */
+      max-height: 110px;        /* ← ekle, iki sıra sığsın */
+      overflow-y: auto;         /* ← ekle */
+      overflow-x: hidden;       /* ← değiştir */
       min-height: 52px;
     }
 
