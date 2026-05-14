@@ -249,7 +249,7 @@ export async function requestExpansion(roomId, direction) {
   await update(ref(db, `rooms/${roomId}/gameState`), {
     pendingExpansion: {
       direction, cost: EXPAND_COST, requestedBy: user.uid,
-      requestedByName: user.displayName, votes, createdAt: serverTimestamp()
+      requestedByName: user.displayName, votes
     }
   });
 }

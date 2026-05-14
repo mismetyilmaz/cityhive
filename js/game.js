@@ -549,14 +549,20 @@ function showDemolishRequest(reqId, req) {
 }
 
 // ── EXPANSION VOTE ────────────────────────────────────────────────────────────
-let _shownExpansionVote = false;
+
 
 function checkExpansionVote(gs) {
-  if (!gs.pendingExpansion) { _shownExpansionVote = false; return; }
+  if (!gs.pendingExpansion) {
+    // Bekleyen istek bitti, kartı temizle
+    const old = document.getElementById("expansion-vote-card");
+    if (old) old.remove();
+    return;
+  }
   const pending = gs.pendingExpansion;
   const myVote  = pending.votes?.[myUser.uid];
-  if (myVote !== undefined || _shownExpansionVote) return;
-  _shownExpansionVote = true;
+  // Zaten kart açıksa veya zaten oy verdimse gösterme
+  if (myVote !== undefined) return;
+  if (document.getElementById("expansion-vote-card")) return;  // ← flag yerine bunu kullan
   showExpansionVoteCard(pending);
 }
 
