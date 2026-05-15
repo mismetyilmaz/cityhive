@@ -243,8 +243,8 @@ export async function requestExpansion(roomId, direction) {
     throw new Error("Zaten bekleyen bir genişletme isteği var");
 
   const playersSnap = await get(ref(db, `rooms/${roomId}/players`));
-  const votes = {};
-  Object.keys(playersSnap.val()).forEach(uid => { votes[uid] = uid === user.uid; });
+  // Sadece isteği atan kişinin oyu true — diğerleri undefined kalır, böylece oy kartı gösterilir
+  const votes = { [user.uid]: true };
 
   await update(ref(db, `rooms/${roomId}/gameState`), {
     pendingExpansion: {

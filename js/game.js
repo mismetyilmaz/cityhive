@@ -42,7 +42,7 @@ const TILE_TH = 20;   // tile "duvar" yüksekliği
 let roomId, myUser, roomData, gameState;
 let unsubGS;
 let canvas, ctx;
-let camX = 0, camY = 0;
+let camX = 0, camY = 0, scale = 1;
 let dragging = false, dragStart = { x:0, y:0 }, camStart = { x:0, y:0 };
 let selectedTool = null;   // "build" | "demolish" | "fund" | null
 let selectedTile = null;   // tile type key
@@ -111,14 +111,14 @@ function render() {
 
 function isoToScreen(gx, gy) {
   return {
-    sx: camX + (gx - gy) * (TILE_W / 2),
-    sy: camY + (gx + gy) * (TILE_H / 2)
+    sx: camX + (gx - gy) * (TILE_W / 2) * scale,
+    sy: camY + (gx + gy) * (TILE_H / 2) * scale
   };
 }
 
 function screenToIso(sx, sy) {
-  const rx = sx - camX;
-  const ry = sy - camY;
+  const rx = (sx - camX) / scale;
+  const ry = (sy - camY) / scale;
   return {
     gx: Math.floor((rx / (TILE_W/2) + ry / (TILE_H/2)) / 2),
     gy: Math.floor((ry / (TILE_H/2) - rx / (TILE_W/2)) / 2)
@@ -281,7 +281,7 @@ function bindEvents() {
   canvas.addEventListener("mouseup",    onMouseUp);
   canvas.addEventListener("mouseleave", onMouseUp);
   canvas.addEventListener("click",      onClick);
-  canvas.addEventListener("wheel",      onWheel, { passive: true });
+  canvas.addEventListener("wheel",      onWheel, { passive: false });
 
   // Touch
   canvas.addEventListener("touchstart",  onTouchStart, { passive: true });
@@ -365,18 +365,38 @@ function checkEdgeButtonClick(mx, my) {
   return false;
 }
 
-function onWheel(e) {
-  // Zoom — basit scale ile değil cam offset ile yaklaştırma
-  // İleride eklenebilir; şimdilik pan yeterli
+const MIN_SCALE = 0.3, MAX_SCALE = 2.5;
+
+function applyZoom(newScale, pivotX, pivotY) {
+  // Pivot noktası etrafında zoom — kamera offsetini düzelt
+  const clamped = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
+  const ratio   = clamped / scale;
+  camX = pivotX - (pivotX - camX) * ratio;
+  camY = pivotY - (pivotY - camY) * ratio;
+  scale = clamped;
+  render();
 }
 
-let _touches = [];
+function onWheel(e) {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.1 : 0.9;
+  const rect   = canvas.getBoundingClientRect();
+  applyZoom(scale * factor, e.clientX - rect.left, e.clientY - rect.top);
+}
+
+let _touches = [], _pinchDist = 0;
 function onTouchStart(e) {
   _touches = [...e.touches];
   if (e.touches.length === 1) {
     dragging  = true;
     dragStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
     camStart  = { x: camX, y: camY };
+  } else if (e.touches.length === 2) {
+    dragging    = false;
+    _pinchDist  = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
   }
 }
 function onTouchMove(e) {
@@ -384,9 +404,22 @@ function onTouchMove(e) {
     e.preventDefault();
     camX = camStart.x + (e.touches[0].clientX - dragStart.x);
     camY = camStart.y + (e.touches[0].clientY - dragStart.y);
+  } else if (e.touches.length === 2) {
+    e.preventDefault();
+    const dist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    if (_pinchDist > 0) {
+      const rect  = canvas.getBoundingClientRect();
+      const midX  = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+      const midY  = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+      applyZoom(scale * (dist / _pinchDist), midX, midY);
+    }
+    _pinchDist = dist;
   }
 }
-function onTouchEnd(e) { dragging = false; }
+function onTouchEnd(e) { dragging = false; _pinchDist = 0; }
 
 // ── OYUN AKSİYONLARI ──────────────────────────────────────────────────────────
 async function handleBuildClick(gx, gy) {
@@ -794,6 +827,41 @@ function buildToolbar() {
   const sep = document.createElement("div");
   sep.style.cssText = "width:1px; background:#30363d; align-self:stretch; margin:0 4px;";
   toolbar.appendChild(sep);
+
+  // Zoom butonları
+  const zoomBar = document.createElement("div");
+  zoomBar.style.cssText = "display:flex; gap:4px; align-items:center; flex-shrink:0;";
+
+  const btnZoomIn = document.createElement("button");
+  btnZoomIn.className = "btn btn-ghost";
+  btnZoomIn.style.cssText = "padding:4px 9px; font-size:14px; line-height:1;";
+  btnZoomIn.title = "Yakınlaştır (+)";
+  btnZoomIn.textContent = "+";
+  btnZoomIn.onclick = () => applyZoom(scale * 1.2, canvas.width / 2, canvas.height / 2);
+
+  const btnZoomOut = document.createElement("button");
+  btnZoomOut.className = "btn btn-ghost";
+  btnZoomOut.style.cssText = "padding:4px 9px; font-size:14px; line-height:1;";
+  btnZoomOut.title = "Uzaklaştır (-)";
+  btnZoomOut.textContent = "−";
+  btnZoomOut.onclick = () => applyZoom(scale * 0.83, canvas.width / 2, canvas.height / 2);
+
+  const btnZoomReset = document.createElement("button");
+  btnZoomReset.className = "btn btn-ghost";
+  btnZoomReset.style.cssText = "padding:4px 8px; font-size:10px;";
+  btnZoomReset.title = "Sıfırla";
+  btnZoomReset.textContent = "⌂";
+  btnZoomReset.onclick = () => { scale = 1; centerCamera(); render(); };
+
+  zoomBar.appendChild(btnZoomIn);
+  zoomBar.appendChild(btnZoomOut);
+  zoomBar.appendChild(btnZoomReset);
+  toolbar.appendChild(zoomBar);
+
+  // Separator
+  const sep2 = document.createElement("div");
+  sep2.style.cssText = "width:1px; background:#30363d; align-self:stretch; margin:0 4px;";
+  toolbar.appendChild(sep2);
 
   // Tile kategorileri
   const tilePanel = document.createElement("div");
