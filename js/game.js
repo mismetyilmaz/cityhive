@@ -73,6 +73,7 @@ let camX = 0, camY = 0, scale = 1;
 let dragging = false, dragStart = { x:0, y:0 }, camStart = { x:0, y:0 };
 let selectedTool = null;   // "build" | "demolish" | "fund" | null
 let selectedTile = null;   // tile type key
+let roadRotation = 0;      // 0,1,2,3 → her biri 90° (sağ tık veya rotate butonu)
 let hoverCell    = null;   // {x, y}
 let buildQueue   = {};     // key → { timer, progress }
 
@@ -264,113 +265,160 @@ function drawTile(gx, gy, tile, key) {
 
 
 // ── YOL ÇİZİMİ ───────────────────────────────────────────────────────────────
+// İzometrik koordinatlar:
+//   Tile merkezi: sx, sy  (isoToScreen'den)
+//   N köşesi: sx, sy-hh   E: sx+hw, sy   S: sx, sy+hh   W: sx-hw, sy
+//   rot=0 → yol E-W uzanır (N-S kaldırım)
+//   rot=1 → yol N-S uzanır (E-W kaldırım)
+
 function drawRoadTile(gx, gy, tile, key, def) {
-  ctx.save(); 
+  ctx.save();
   const { sx, sy } = isoToScreen(gx, gy);
-  const ownerColor = getPlayerColor(tile.ownerId);
+  const S  = scale;
+  const hw = TILE_W / 2 * S;
+  const hh = TILE_H / 2 * S;
+  const rot = (tile.rotation ?? 0) % 2;
+  const sw  = Math.max(2, (def.sidewalk || 4) * S); // kaldırım inset
 
-  // Yolun yüksekliği (th) def'ten gelir — çok ince
-  const tH = (def.th || 3) * scale;
+  // 4 köşe
+  const N = { x: sx,      y: sy - hh };
+  const E = { x: sx + hw, y: sy      };
+  const Sv= { x: sx,      y: sy + hh };
+  const W = { x: sx - hw, y: sy      };
 
-  // Kaldırım rengi ve asfalt rengi
-  const sidewalkColor = "#6b7180"; // açık gri
-  const asphaltColor  = def.color; // koyu gri
-  const laneMarkColor = def.twoWay ? "#e8c840" : "#ffffff"; // çift yön=sarı, tek yön=beyaz
-
-  // İzometrik kaldırım (tile'ı biraz daha geniş çiz)
-  const sw = (def.sidewalk || 4) * scale; // kaldırım piksel genişliği (scaled)
-
-  // Kaldırım — zemin seviyesi, tam tile boyutunda
-  ctx.globalAlpha = 0.95;
+  // Kaldırım (tüm tile)
+  ctx.globalAlpha = 1;
   ctx.beginPath();
-  ctx.moveTo(sx,              sy - TILE_H/2 * scale);
-  ctx.lineTo(sx + TILE_W/2 * scale, sy);
-  ctx.lineTo(sx,              sy + TILE_H/2 * scale);
-  ctx.lineTo(sx - TILE_W/2 * scale, sy);
+  ctx.moveTo(N.x, N.y); ctx.lineTo(E.x, E.y);
+  ctx.lineTo(Sv.x, Sv.y); ctx.lineTo(W.x, W.y);
   ctx.closePath();
-  ctx.fillStyle = sidewalkColor;
+  ctx.fillStyle = "#5a6270";
   ctx.fill();
 
-  // Asfalt — kaldırımdan biraz içeride (sw kadar inset)
-  const inset = sw / (TILE_W / 2 * scale); // 0..1 arası normalize
-  ctx.beginPath();
-  ctx.moveTo(sx,                              sy - TILE_H/2 * scale * (1 - inset));
-  ctx.lineTo(sx + TILE_W/2 * scale * (1 - inset), sy * (inset > 0 ? 1 : 1) + TILE_H/2 * scale * inset * 0);
-  // Simplified: draw inset diamond
-  const ix = TILE_W/2 * scale - sw * 1.4;
-  const iy = TILE_H/2 * scale - sw * 0.7;
-  ctx.beginPath();
-  ctx.moveTo(sx,      sy - iy);
-  ctx.lineTo(sx + ix, sy);
-  ctx.lineTo(sx,      sy + iy);
-  ctx.lineTo(sx - ix, sy);
-  ctx.closePath();
-  ctx.fillStyle = asphaltColor;
-  ctx.fill();
-
-  // Şerit çizgileri — yol merkezinden geçen ince çizgiler
-  const laneCount = def.lanes;
-  ctx.strokeStyle = laneMarkColor;
-  ctx.globalAlpha = 0.5;
-
-  if (def.twoWay && laneCount === 1) {
-    // Ortada tek çift çizgi (karşı yönler)
-    ctx.lineWidth = Math.max(0.5, scale * 0.6);
-    ctx.setLineDash([4 * scale, 4 * scale]);
-    drawIsoLine(sx, sy, ix, iy, 0);   // merkez çizgi
-  } else if (!def.twoWay && laneCount === 1) {
-    // Ortada kesik tek çizgi + yön oku
-    ctx.lineWidth = Math.max(0.5, scale * 0.5);
-    ctx.setLineDash([5 * scale, 5 * scale]);
-    drawIsoLine(sx, sy, ix, iy, 0);
-  } else if (def.twoWay && laneCount === 2) {
-    // İki eşit şerit, ortada çift sarı çizgi
-    ctx.lineWidth = Math.max(0.5, scale * 0.6);
-    ctx.setLineDash([]);
-    drawIsoLine(sx, sy, ix * 0.95, iy * 0.95, -0.25); // sol çizgi
-    drawIsoLine(sx, sy, ix * 0.95, iy * 0.95,  0.25); // sağ çizgi
-    // Şerit arası kesik çizgiler
-    ctx.strokeStyle = "#ffffff";
-    ctx.globalAlpha = 0.3;
-    ctx.setLineDash([4 * scale, 6 * scale]);
-    drawIsoLine(sx, sy, ix * 0.7, iy * 0.7, -0.6);
-    drawIsoLine(sx, sy, ix * 0.7, iy * 0.7,  0.6);
-  } else { // 2 lane, 1 way
-    ctx.lineWidth = Math.max(0.5, scale * 0.5);
-    ctx.setLineDash([5 * scale, 5 * scale]);
-    ctx.strokeStyle = "#ffffff";
-    ctx.globalAlpha = 0.35;
-    drawIsoLine(sx, sy, ix * 0.8, iy * 0.8, 0);
+  // Asfalt — kaldırım inset ile
+  // rot=0: yol E-W, kaldırım N ve S tarafında → asfalt N ve S'den içe çekilir
+  // rot=1: yol N-S, kaldırım E ve W tarafında → asfalt E ve W'den içe çekilir
+  let asp;
+  if (rot === 0) {
+    // N'den ve S'den içe: y ekseninde inset
+    asp = {
+      tl: { x: sx - hw + sw * 1.8, y: sy - sw * 0.7 }, // NW inset
+      tr: { x: sx + hw - sw * 1.8, y: sy - sw * 0.7 }, // NE inset
+      br: { x: sx + hw - sw * 1.8, y: sy + sw * 0.7 }, // SE inset
+      bl: { x: sx - hw + sw * 1.8, y: sy + sw * 0.7 }, // SW inset
+    };
+  } else {
+    // E'den ve W'den içe: x ekseninde inset
+    asp = {
+      tl: { x: sx - sw * 1.8, y: sy - hh + sw * 0.7 }, // NW inset
+      tr: { x: sx - sw * 1.8, y: sy + hh - sw * 0.7 }, // SW inset
+      br: { x: sx + sw * 1.8, y: sy + hh - sw * 0.7 }, // SE inset
+      bl: { x: sx + sw * 1.8, y: sy - hh + sw * 0.7 }, // NE inset
+    };
   }
-  ctx.setLineDash([]);
 
-  // Sahip rengi çerçevesi (çok ince)
-  ctx.globalAlpha = 0.7;
-  ctx.strokeStyle = ownerColor;
-  ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.moveTo(sx,      sy - iy);
-  ctx.lineTo(sx + ix, sy);
-  ctx.lineTo(sx,      sy + iy);
-  ctx.lineTo(sx - ix, sy);
+  ctx.moveTo(asp.tl.x, asp.tl.y);
+  ctx.lineTo(asp.tr.x, asp.tr.y);
+  ctx.lineTo(asp.br.x, asp.br.y);
+  ctx.lineTo(asp.bl.x, asp.bl.y);
+  ctx.closePath();
+  ctx.fillStyle = def.color;
+  ctx.fill();
+
+  // ── Şerit çizgileri ──
+  const lw = Math.max(0.8, S * 0.9);
+  ctx.lineWidth = lw;
+
+  if (rot === 0) {
+    // Şeritler yatay (E-W doğrultusu = canvas'ta x ekseni)
+    const x1 = asp.tl.x + 1;
+    const x2 = asp.tr.x - 1;
+    const mid = sy;
+
+    if (def.twoWay) {
+      // Çift sarı merkez çizgi
+      const g = Math.max(1.5, S * 1.2);
+      ctx.globalAlpha = 0.95;
+      ctx.strokeStyle = "#f5c518";
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(x1, mid - g); ctx.lineTo(x2, mid - g); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x1, mid + g); ctx.lineTo(x2, mid + g); ctx.stroke();
+      if (def.lanes === 2) {
+        // Beyaz kesik şerit her yönde
+        const q = Math.max(3, S * 2.5);
+        ctx.strokeStyle = "#fff"; ctx.globalAlpha = 0.45;
+        ctx.setLineDash([6 * S, 5 * S]);
+        ctx.beginPath(); ctx.moveTo(x1, mid - g - q); ctx.lineTo(x2, mid - g - q); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x1, mid + g + q); ctx.lineTo(x2, mid + g + q); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    } else {
+      // Beyaz kesik merkez çizgi
+      ctx.strokeStyle = "#fff"; ctx.globalAlpha = 0.7;
+      ctx.setLineDash([6 * S, 5 * S]);
+      ctx.beginPath(); ctx.moveTo(x1, mid); ctx.lineTo(x2, mid); ctx.stroke();
+      ctx.setLineDash([]);
+      if (def.lanes === 2) {
+        const q = Math.max(2.5, S * 2.5);
+        ctx.setLineDash([6 * S, 5 * S]);
+        ctx.beginPath(); ctx.moveTo(x1, mid - q); ctx.lineTo(x2, mid - q); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x1, mid + q); ctx.lineTo(x2, mid + q); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+  } else {
+    // Şeritler dikey (N-S doğrultusu = canvas'ta y ekseni)
+    const y1 = asp.tl.y + 1;
+    const y2 = asp.tr.y - 1;
+    const mid = sx;
+
+    if (def.twoWay) {
+      const g = Math.max(1.5, S * 1.2);
+      ctx.globalAlpha = 0.95;
+      ctx.strokeStyle = "#f5c518";
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(mid - g, y1); ctx.lineTo(mid - g, y2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(mid + g, y1); ctx.lineTo(mid + g, y2); ctx.stroke();
+      if (def.lanes === 2) {
+        const q = Math.max(3, S * 2.5);
+        ctx.strokeStyle = "#fff"; ctx.globalAlpha = 0.45;
+        ctx.setLineDash([6 * S, 5 * S]);
+        ctx.beginPath(); ctx.moveTo(mid - g - q, y1); ctx.lineTo(mid - g - q, y2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(mid + g + q, y1); ctx.lineTo(mid + g + q, y2); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    } else {
+      ctx.strokeStyle = "#fff"; ctx.globalAlpha = 0.7;
+      ctx.setLineDash([6 * S, 5 * S]);
+      ctx.beginPath(); ctx.moveTo(mid, y1); ctx.lineTo(mid, y2); ctx.stroke();
+      ctx.setLineDash([]);
+      if (def.lanes === 2) {
+        const q = Math.max(2.5, S * 2.5);
+        ctx.setLineDash([6 * S, 5 * S]);
+        ctx.beginPath(); ctx.moveTo(mid - q, y1); ctx.lineTo(mid - q, y2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(mid + q, y1); ctx.lineTo(mid + q, y2); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+  }
+
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+
+  // Sahip rengi çerçevesi
+  const ownerColor = getPlayerColor(tile.ownerId);
+  ctx.strokeStyle = ownerColor;
+  ctx.lineWidth = 1.2;
+  ctx.globalAlpha = 0.55;
+  ctx.beginPath();
+  ctx.moveTo(N.x, N.y); ctx.lineTo(E.x, E.y);
+  ctx.lineTo(Sv.x, Sv.y); ctx.lineTo(W.x, W.y);
   ctx.closePath();
   ctx.stroke();
 
   ctx.globalAlpha = 1;
-  ctx.restore()
-}
-
-// İzometrik yüzey üzerinde şerit çizgisi çizer
-// offset: -1..1 arası, 0=merkez, pozitif=sağ şerit yönü
-function drawIsoLine(sx, sy, ix, iy, offset) {
-  const ox = offset * iy * 0.6;
-  const oy = offset * ix * 0.3;
-  ctx.beginPath();
-  ctx.moveTo(sx - ix + ox, sy      + oy);
-  ctx.lineTo(sx      + ox, sy - iy + oy);
-  ctx.moveTo(sx + ox,      sy - iy + oy);
-  ctx.lineTo(sx + ix + ox, sy      + oy);
-  ctx.stroke();
+  ctx.restore();
 }
 
 function drawHover(gs) {
@@ -384,7 +432,41 @@ function drawHover(gs) {
             : isValid ? "#58a6ff"
             : "#ff4444";
 
-  drawDiamond(sx, sy, col + "30", col, 1);
+  // Yol seçiliyse hover'da yol yönünü göster
+  const placingRoad = selectedTool === "build" && selectedTile && TILES[selectedTile]?.isRoad;
+  if (placingRoad && isValid) {
+    const S  = scale;
+    const hw = TILE_W / 2 * S;
+    const hh = TILE_H / 2 * S;
+    const rot = roadRotation % 2;
+
+    // Önce yarı saydam yol önizlemesi
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = TILES[selectedTile].color;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy - hh); ctx.lineTo(sx + hw, sy);
+    ctx.lineTo(sx, sy + hh); ctx.lineTo(sx - hw, sy);
+    ctx.closePath();
+    ctx.fill();
+
+    // Yön çizgisi
+    ctx.globalAlpha = 0.7;
+    ctx.strokeStyle = "#58a6ff";
+    ctx.lineWidth = Math.max(1.5, S * 1.5);
+    ctx.setLineDash([4 * S, 3 * S]);
+    ctx.beginPath();
+    if (rot === 0) {
+      ctx.moveTo(sx - hw + 4, sy); ctx.lineTo(sx + hw - 4, sy);
+    } else {
+      ctx.moveTo(sx, sy - hh + 4); ctx.lineTo(sx, sy + hh - 4);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  } else {
+    drawDiamond(sx, sy, col + "30", col, 1);
+  }
 }
 
 function drawEdgeButtons(gs) {
@@ -424,6 +506,7 @@ function bindEvents() {
   canvas.addEventListener("mouseup",    onMouseUp);
   canvas.addEventListener("mouseleave", onMouseUp);
   canvas.addEventListener("click",      onClick);
+  canvas.addEventListener("contextmenu", onRightClick);
   canvas.addEventListener("wheel",      onWheel, { passive: false });
 
   // Touch
@@ -508,6 +591,16 @@ function checkEdgeButtonClick(mx, my) {
   return false;
 }
 
+function onRightClick(e) {
+  e.preventDefault();
+  // Yalnızca yol seçiliyken rotasyon değiştir
+  if (selectedTile && TILES[selectedTile]?.isRoad) {
+    roadRotation = (roadRotation + 1) % 4;
+    updateRotateButton();
+    render();
+  }
+}
+
 function onWheel(e) {
   e.preventDefault();
   const factor = e.deltaY < 0 ? 1.1 : 0.9;
@@ -560,7 +653,8 @@ async function handleBuildClick(gx, gy) {
   }
 
   try {
-    const key = await placeTile(roomId, gx, gy, selectedTile, def.cost);
+    const rotation = def.isRoad ? roadRotation : 0;
+    const key = await placeTile(roomId, gx, gy, selectedTile, def.cost, rotation);
     if (def.isRoad) {
       // Yollar anında yerleşir, animasyon yok
       showToast(`${def.label} yapıldı`, "success");
@@ -965,6 +1059,20 @@ function buildToolbar() {
   tilePanel.style.cssText = "display:flex; gap:4px; flex-wrap:wrap; align-items:center; flex:1;";
   toolbar.appendChild(tilePanel);
 
+  // Mobil rotate butonu — sağda, yol seçiliyken görünür
+  const rotBtn = document.createElement("button");
+  rotBtn.id = "btn-road-rotate";
+  rotBtn.className = "btn btn-ghost";
+  rotBtn.style.cssText = "padding:5px 10px; font-size:13px; display:none; flex-shrink:0;";
+  rotBtn.title = "Yolu döndür (sağ tık)";
+  rotBtn.innerHTML = "↻ <span id='rot-label'>0°</span>";
+  rotBtn.onclick = () => {
+    roadRotation = (roadRotation + 1) % 4;
+    updateRotateButton();
+    render();
+  };
+  toolbar.appendChild(rotBtn);
+
   updateTilePanel();
 
   // Stil
@@ -979,6 +1087,18 @@ function buildToolbar() {
     @keyframes slideIn { from { transform:translateX(20px); opacity:0; } to { transform:translateX(0); opacity:1; } }
   `;
   document.head.appendChild(style);
+}
+
+function updateRotateButton() {
+  const btn = document.getElementById("btn-road-rotate");
+  const lbl = document.getElementById("rot-label");
+  if (!btn) return;
+  const isRoad = selectedTile && TILES[selectedTile]?.isRoad;
+  btn.style.display = isRoad ? "inline-flex" : "none";
+  if (lbl) {
+    const labels = ["↔ NE-SW", "↕ NW-SE", "↔ SW-NE", "↕ SE-NW"];
+    lbl.textContent = labels[roadRotation] || "0°";
+  }
 }
 
 function lanesSvg(lanes, twoWay) {
@@ -1062,6 +1182,7 @@ function updateTilePanel() {
           selectedTile = type;
           document.querySelectorAll(".tile-btn").forEach(b => b.classList.remove("selected"));
           btn.classList.add("selected");
+          updateRotateButton();
         };
         panel.appendChild(btn);
       });
@@ -1083,6 +1204,7 @@ function updateTilePanel() {
         selectedTile = type;
         document.querySelectorAll(".tile-btn").forEach(b => b.classList.remove("selected"));
         btn.classList.add("selected");
+        updateRotateButton();
       };
       panel.appendChild(btn);
     });

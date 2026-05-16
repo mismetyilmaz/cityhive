@@ -118,7 +118,7 @@ export async function startGame(roomId) {
 }
 
 // ── TİLE ──────────────────────────────────────────────────────────────────────
-export async function placeTile(roomId, x, y, tileType, cost) {
+export async function placeTile(roomId, x, y, tileType, cost, rotation = 0) {
   const user = auth.currentUser;
   if (!user) throw new Error("Giriş yapılmamış");
   const key = `${x},${y}`;
@@ -150,7 +150,8 @@ export async function placeTile(roomId, x, y, tileType, cost) {
   await update(ref(db, `rooms/${roomId}/gameState`), {
     [`tiles/${key}`]: {
       type: tileType, ownerId: user.uid, ownerName: user.displayName,
-      builtAt: serverTimestamp(), building: isRoad ? false : true, level: 1
+      builtAt: serverTimestamp(), building: isRoad ? false : true, level: 1,
+      rotation: isRoad ? rotation : 0
     },
     [`budgets/${user.uid}`]: budget - cost
   });
