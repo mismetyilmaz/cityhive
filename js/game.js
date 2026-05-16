@@ -266,6 +266,7 @@ function drawTile(gx, gy, tile, key) {
 
 // ── YOL ÇİZİMİ ───────────────────────────────────────────────────────────────
 function drawRoadTile(gx, gy, tile, key, def) {
+  ctx.save(); 
   const { sx, sy } = isoToScreen(gx, gy);
   const ownerColor = getPlayerColor(tile.ownerId);
 
@@ -357,6 +358,7 @@ function drawRoadTile(gx, gy, tile, key, def) {
   ctx.stroke();
 
   ctx.globalAlpha = 1;
+  ctx.restore()
 }
 
 // İzometrik yüzey üzerinde şerit çizgisi çizer
