@@ -69,7 +69,7 @@ const TILE_TH = 20;   // tile "duvar" yüksekliği
 let roomId, myUser, roomData, gameState;
 let unsubGS;
 let canvas, ctx;
-let camX = 0, camY = 0;
+let camX = 0, camY = 0, scale = 1;
 let dragging = false, dragStart = { x:0, y:0 }, camStart = { x:0, y:0 };
 let selectedTool = null;   // "build" | "demolish" | "fund" | null
 let selectedTile = null;   // tile type key
@@ -138,20 +138,19 @@ function render() {
 
 function isoToScreen(gx, gy) {
   return {
-    sx: camX + (gx - gy) * (TILE_W / 2),
-    sy: camY + (gx + gy) * (TILE_H / 2)
+    sx: camX + (gx - gy) * (TILE_W / 2) * scale,
+    sy: camY + (gx + gy) * (TILE_H / 2) * scale
   };
 }
 
 function screenToIso(sx, sy) {
-  const rx = sx - camX;
-  const ry = sy - camY;
+  const rx = (sx - camX) / scale;
+  const ry = (sy - camY) / scale;
   return {
     gx: Math.floor((rx / (TILE_W/2) + ry / (TILE_H/2)) / 2),
     gy: Math.floor((ry / (TILE_H/2) - rx / (TILE_W/2)) / 2)
   };
 }
-
 function drawGrid(gs) {
   ctx.save();
   for (let x = 0; x < gs; x++) {
@@ -425,7 +424,7 @@ function bindEvents() {
   canvas.addEventListener("mouseup",    onMouseUp);
   canvas.addEventListener("mouseleave", onMouseUp);
   canvas.addEventListener("click",      onClick);
-  canvas.addEventListener("wheel",      onWheel, { passive: true });
+  canvas.addEventListener("wheel",      onWheel, { passive: false });
 
   // Touch
   canvas.addEventListener("touchstart",  onTouchStart, { passive: true });
@@ -510,8 +509,17 @@ function checkEdgeButtonClick(mx, my) {
 }
 
 function onWheel(e) {
-  // Zoom — basit scale ile değil cam offset ile yaklaştırma
-  // İleride eklenebilir; şimdilik pan yeterli
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.1 : 0.9;
+  const rect   = canvas.getBoundingClientRect();
+  const pivotX = e.clientX - rect.left;
+  const pivotY = e.clientY - rect.top;
+  const newScale = Math.max(0.3, Math.min(2.5, scale * factor));
+  const ratio    = newScale / scale;
+  camX = pivotX - (pivotX - camX) * ratio;
+  camY = pivotY - (pivotY - camY) * ratio;
+  scale = newScale;
+  render();
 }
 
 let _touches = [];
