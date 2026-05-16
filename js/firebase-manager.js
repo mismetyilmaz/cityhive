@@ -127,12 +127,30 @@ export async function placeTile(roomId, x, y, tileType, cost) {
   const gs = gsSnap.val();
   const budget = gs.budgets?.[user.uid] ?? 0;
   if (budget < cost) throw new Error(`Yetersiz bütçe (${budget.toLocaleString()}₺ / ${cost.toLocaleString()}₺)`);
-  if (gs.tiles?.[key]) throw new Error("Bu alanda zaten bir yapı var");
+
+  const existing = gs.tiles?.[key];
+
+  // Yol tanımlarını import edemeyiz burada, type string'den kontrol
+  const isRoadType = tileType.startsWith("road_");
+  const existingIsRoad = existing?.type?.startsWith("road_");
+
+  if (existing) {
+    if (isRoadType && existingIsRoad) {
+      // Yol üzerine farklı yol tipini uygula (değiştir)
+    } else if (!isRoadType && existingIsRoad) {
+      throw new Error("Yol üzerine bina inşa edilemez");
+    } else {
+      throw new Error("Bu alanda zaten bir yapı var");
+    }
+  }
+
+  // Yollar anında yerleşir (building: false), binalar inşaat animasyonuyla
+  const isRoad = isRoadType;
 
   await update(ref(db, `rooms/${roomId}/gameState`), {
     [`tiles/${key}`]: {
       type: tileType, ownerId: user.uid, ownerName: user.displayName,
-      builtAt: serverTimestamp(), building: true, level: 1
+      builtAt: serverTimestamp(), building: isRoad ? false : true, level: 1
     },
     [`budgets/${user.uid}`]: budget - cost
   });
@@ -243,8 +261,8 @@ export async function requestExpansion(roomId, direction) {
     throw new Error("Zaten bekleyen bir genişletme isteği var");
 
   const playersSnap = await get(ref(db, `rooms/${roomId}/players`));
-  // Sadece isteği atan kişinin oyu true — diğerleri undefined kalır, böylece oy kartı gösterilir
-  const votes = { [user.uid]: true };
+  const votes = {};
+  Object.keys(playersSnap.val()).forEach(uid => { votes[uid] = uid === user.uid; });
 
   await update(ref(db, `rooms/${roomId}/gameState`), {
     pendingExpansion: {
