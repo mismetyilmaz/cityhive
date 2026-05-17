@@ -479,33 +479,16 @@ function drawHover(gs) {
 
   const { sx, sy } = isoToScreen(x, y);
   const isValid = canPlaceHere(x, y);
-  const hw = TILE_W/2 * scale, hh = TILE_H/2 * scale;
 
   const placingRoad = selectedTool === "build" && selectedTile && TILES[selectedTile]?.isRoad;
 
   if (placingRoad && isValid) {
-    const r = roadRotation % 2;
-    ctx.save();
-    ctx.globalAlpha = 0.3;
-    ctx.fillStyle = TILES[selectedTile].color;
-    ctx.beginPath();
-    ctx.moveTo(sx, sy-hh); ctx.lineTo(sx+hw, sy);
-    ctx.lineTo(sx, sy+hh); ctx.lineTo(sx-hw, sy);
-    ctx.closePath();
-    ctx.fill();
-
-    // Yön çizgisi önizlemesi
-    ctx.globalAlpha = 0.85;
-    ctx.strokeStyle = "#58a6ff";
-    ctx.lineWidth = Math.max(2, scale*2);
-    ctx.setLineDash([4*scale, 3*scale]);
-    ctx.beginPath();
-    if (r === 0) { ctx.moveTo(sx-hw+4, sy); ctx.lineTo(sx+hw-4, sy); }
-    else          { ctx.moveTo(sx, sy-hh+4); ctx.lineTo(sx, sy+hh-4); }
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.restore();
+    // Sağ tık rotasyonunu kusursuz görmek için gerçek yol fonksiyonunu yarı saydam çağırıyoruz
+    ctx.globalAlpha = 0.6;
+    drawRoadSegment(x, y, roadRotation, TILES[selectedTile], null);
+    ctx.globalAlpha = 1;
   } else {
+    // Yol dışındaki binalar veya geçersiz alanlar için elmas şekli
     const col = selectedTool === "demolish" ? "#ff4444"
               : isValid ? "#58a6ff" : "#ff4444";
     drawDiamond(sx, sy, col+"30", col, 1);
