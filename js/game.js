@@ -295,8 +295,7 @@ function drawRoadSegment(gx, gy, rot, def, ownerId) {
   const hw = TILE_W/2 * scale;
   const hh = TILE_H/2 * scale;
   const r  = (rot ?? 0) % 2;
-  const sw = Math.max(2, (def.sidewalk || 4) * scale * 0.18); // kaldırım inset miktarı
-
+ const sw = Math.max(4, (def.sidewalk || 4) * scale * 0.35);
   // ── 1) Kaldırım — tam tile ──
   ctx.globalAlpha = 1;
   ctx.beginPath();
@@ -312,26 +311,26 @@ function drawRoadSegment(gx, gy, rot, def, ownerId) {
   // rot=0: Yol EW → kaldırım N ve S köşelerinde → asfalt N,S'den inset
   // rot=1: Yol NS → kaldırım E ve W köşelerinde → asfalt E,W'den inset
   let aspPts;
-  if (r === 0) {
-    // Kaldırım kenarları: N (sx, sy-hh) ve S (sx, sy+hh)
-    // Asfalt: N ve S'den sw kadar içeri çekil
-    // N'den içeri: (+sw, +sw/2) offset (izometrik için NE yönünde = x+, y+)
-    // S'den içeri: (-sw, -sw/2) offset
-    aspPts = [
-      { x: sx - hw + sw,  y: sy - sw*0.5 }, // NW inset
-      { x: sx + hw - sw,  y: sy - sw*0.5 }, // NE inset
-      { x: sx + hw - sw,  y: sy + sw*0.5 }, // SE inset
-      { x: sx - hw + sw,  y: sy + sw*0.5 }, // SW inset
-    ];
-  } else {
-    // rot=1: Yol NS, kaldırım E ve W'de
-    aspPts = [
-      { x: sx - sw,       y: sy - hh + sw*0.5 }, // N inset (NW)
-      { x: sx + sw,       y: sy - hh + sw*0.5 }, // N inset (NE)
-      { x: sx + sw,       y: sy + hh - sw*0.5 }, // S inset (SE)
-      { x: sx - sw,       y: sy + hh - sw*0.5 }, // S inset (SW)
-    ];
-  }
+ if (r === 0) {
+  // rot=0: Yol W↔E kenarları arasında uzanır
+  // W kenarı: (sx-hw, sy) → kaldırımdan sw kadar içeri gir
+  // E kenarı: (sx+hw, sy) → kaldırımdan sw kadar içeri gir
+  // Yolun "üst" ve "alt" sınırı: N ve S köşelerinden sw kadar uzaklaş
+  aspPts = [
+    { x: sx - hw,        y: sy - sw },   // W kenarı üst
+    { x: sx + hw,        y: sy - sw },   // E kenarı üst
+    { x: sx + hw,        y: sy + sw },   // E kenarı alt
+    { x: sx - hw,        y: sy + sw },   // W kenarı alt
+  ];
+} else {
+  // rot=1: Yol N↔S kenarları arasında uzanır
+  aspPts = [
+    { x: sx - sw,        y: sy - hh },   // N kenarı sol
+    { x: sx + sw,        y: sy - hh },   // N kenarı sağ
+    { x: sx + sw,        y: sy + hh },   // S kenarı sağ
+    { x: sx - sw,        y: sy + hh },   // S kenarı sol
+  ];
+}
 
   ctx.beginPath();
   ctx.moveTo(aspPts[0].x, aspPts[0].y);
