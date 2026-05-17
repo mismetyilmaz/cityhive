@@ -107,8 +107,10 @@ export async function startGame(roomId) {
   Object.keys(players).forEach(uid => { budgets[uid] = STARTING_BUDGET; });
 
   await update(ref(db, `rooms/${roomId}/meta`), { status: "playing", startedAt: serverTimestamp() });
+  const gridSize = 20;
   await set(ref(db, `rooms/${roomId}/gameState`), {
-    gridSize:         20,
+    gridSize,
+    mainRoadRow:      Math.floor(gridSize / 2), // anayol grid ortasından geçer
     tiles:            {},
     budgets,
     fund:             { balance: 0, expansionFund: 0 },
@@ -118,7 +120,7 @@ export async function startGame(roomId) {
 }
 
 // ── TİLE ──────────────────────────────────────────────────────────────────────
-export async function placeTile(roomId, x, y, tileType, cost, rotation = 0) {
+export async function placeTile(roomId, x, y, tileType, cost) {
   const user = auth.currentUser;
   if (!user) throw new Error("Giriş yapılmamış");
   const key = `${x},${y}`;
@@ -150,8 +152,7 @@ export async function placeTile(roomId, x, y, tileType, cost, rotation = 0) {
   await update(ref(db, `rooms/${roomId}/gameState`), {
     [`tiles/${key}`]: {
       type: tileType, ownerId: user.uid, ownerName: user.displayName,
-      builtAt: serverTimestamp(), building: isRoad ? false : true, level: 1,
-      rotation: isRoad ? rotation : 0
+      builtAt: serverTimestamp(), building: isRoad ? false : true, level: 1
     },
     [`budgets/${user.uid}`]: budget - cost
   });
