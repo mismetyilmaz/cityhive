@@ -295,94 +295,121 @@ function drawRoadSegment(gx, gy, rot, def, ownerId) {
   const hw = TILE_W/2 * scale;
   const hh = TILE_H/2 * scale;
   const r  = (rot ?? 0) % 2;
-  const sw = hh * 0.28;
-  // ── 1) Kaldırım — tam tile ──
-  ctx.globalAlpha = 1;
-  ctx.beginPath();
-  ctx.moveTo(sx,      sy - hh);
-  ctx.lineTo(sx + hw, sy);
-  ctx.lineTo(sx,      sy + hh);
-  ctx.lineTo(sx - hw, sy);
-  ctx.closePath();
-  ctx.fillStyle = "#5c6370";
-  ctx.fill();
-  ctx.clip(); 
 
-  // ── 2) Asfalt — N/S veya E/W inset ──
-  // rot=0: Yol EW → kaldırım N ve S köşelerinde → asfalt N,S'den inset
-  // rot=1: Yol NS → kaldırım E ve W köşelerinde → asfalt E,W'den inset
-  let aspPts;
+  // ── YEREL İZOMETRİK KOORDİNAT SİSTEMİ ──
+  // lx, ly değerleri 0 ile 1 arasındadır. 
+  // (0,0) Kuzey köşesi, (1,1) Güney köşesidir.
+  const getIsoPt = (lx, ly) => {
+    const dx = lx - 0.5;
+    const dy = ly - 0.5;
+    return {
+      x: sx + (dx - dy) * hw,
+      y: sy + (dx + dy) * hh
+    };
+  };
 
-const t = sw / hh;
+  // Verilen {lx, ly} noktalarından izometrik poligon çizer
+  const drawIsoPoly = (pts, fill) => {
+    ctx.beginPath();
+    const start = getIsoPt(pts[0].lx, pts[0].ly);
+    ctx.moveTo(start.x, start.y);
+    for (let i = 1; i < pts.length; i++) {
+      const p = getIsoPt(pts[i].lx, pts[i].ly);
+      ctx.lineTo(p.x, p.y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+  };
 
-// İzometrik yüzeye dik birim vektör
-const len = Math.sqrt(hw*hw + hh*hh);
-const nx  = hh / len;   // ≈ 0.447
-const ny  = hw / len;   // ≈ 0.894
-const off = sw * 2;     // şerit yarı genişliği (piksel)
+  // İki nokta arasına izometrik çizgi çizer
+  const drawIsoLine = (lx1, ly1, lx2, ly2, color, width, dash = []) => {
+    const p1 = getIsoPt(lx1, ly1);
+    const p2 = getIsoPt(lx2, ly2);
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1.2, width * scale);
+    ctx.setLineDash(dash.map(d => d * scale));
+    ctx.stroke();
+  };
 
-if (r === 0) {
-  // W→E yolu: W=(sx-hw,sy)  E=(sx+hw,sy)
-  aspPts = [
-    { x: sx - hw - nx*off, y: sy - ny*off },  // W üst
-    { x: sx + hw - nx*off, y: sy - ny*off },  // E üst
-    { x: sx + hw + nx*off, y: sy + ny*off },  // E alt
-    { x: sx - hw + nx*off, y: sy + ny*off },  // W alt
-  ];
-} else {
-  // N→S yolu: N=(sx,sy-hh)  S=(sx,sy+hh)
-  aspPts = [
-    { x: sx - nx*off, y: sy - hh - ny*off },  // N sol
-    { x: sx + nx*off, y: sy - hh + ny*off },  // N sağ  
-    { x: sx + nx*off, y: sy + hh + ny*off },  // S sağ
-    { x: sx - nx*off, y: sy + hh - ny*off },  // S sol
-  ];
-}
-  ctx.beginPath();
-  ctx.moveTo(aspPts[0].x, aspPts[0].y);
-  for (let i=1; i<4; i++) ctx.lineTo(aspPts[i].x, aspPts[i].y);
-  ctx.closePath();
-  ctx.fillStyle = def.color;
-  ctx.fill();
+  // ── 1) Kaldırım (Arka Plan Elması) ──
+  drawIsoPoly([
+    {lx: 0, ly: 0}, {lx: 1, ly: 0}, {lx: 1, ly: 1}, {lx: 0, ly: 1}
+  ], "#5c6370");
 
-  // ── 3) Şerit çizgileri ──
-  ctx.lineWidth = Math.max(0.8, scale * 0.85);
-
+  // ── 2) Asfalt Zemin ──
+  const sw = 0.20; // Kaldırım kalınlığı oranı (Tile'ın %20'si)
   if (r === 0) {
-    // Şeritler EW → yatay çizgiler (canvas x ekseni)
-    const x1 = aspPts[0].x + 1;
-    const x2 = aspPts[1].x - 1;
-    const mid = sy;
-    drawLaneMarkings(x1, x2, mid, def, true);
+    // EW (Doğu-Batı) Yolu
+    drawIsoPoly([
+      {lx: 0, ly: sw}, {lx: 1, ly: sw}, {lx: 1, ly: 1-sw}, {lx: 0, ly: 1-sw}
+    ], def.color);
   } else {
-    // Şeritler NS → dikey çizgiler (canvas y ekseni)
-    const y1 = aspPts[0].y + 1;
-    const y2 = aspPts[2].y - 1;
-    const mid = sx;
-    drawLaneMarkings(y1, y2, mid, def, false);
+    // NS (Kuzey-Güney) Yolu
+    drawIsoPoly([
+      {lx: sw, ly: 0}, {lx: 1-sw, ly: 0}, {lx: 1-sw, ly: 1}, {lx: sw, ly: 1}
+    ], def.color);
   }
 
-  ctx.setLineDash([]);
+  // ── 3) Şerit Çizgileri ──
+  const mid = 0.5;         // Yolun tam ortası
+  const gap = 0.08;        // Çift sarı çizgi arası boşluk
+  const dashWhite = [6, 5];// Kesik çizgi deseni
+  const q = 0.18;          // Şerit ayırıcı çizgilerin merkeze uzaklığı
 
-  // ── 4) Sahip çerçevesi ──
+  if (r === 0) { // EW Yolu Şeritleri
+    if (def.twoWay) {
+      // Çift yön sarı merkez çizgileri
+      drawIsoLine(0, mid - gap/2, 1, mid - gap/2, "#f5c518", 1.5);
+      drawIsoLine(0, mid + gap/2, 1, mid + gap/2, "#f5c518", 1.5);
+      if (def.lanes === 2) {
+        drawIsoLine(0, mid - q, 1, mid - q, "#fff", 1.5, dashWhite);
+        drawIsoLine(0, mid + q, 1, mid + q, "#fff", 1.5, dashWhite);
+      }
+    } else {
+      // Tek yön beyaz kesik merkez çizgi
+      drawIsoLine(0, mid, 1, mid, "#fff", 1.5, dashWhite);
+      if (def.lanes === 2) {
+        drawIsoLine(0, mid - q, 1, mid - q, "#fff", 1.5, dashWhite);
+        drawIsoLine(0, mid + q, 1, mid + q, "#fff", 1.5, dashWhite);
+      }
+    }
+  } else { // NS Yolu Şeritleri
+    if (def.twoWay) {
+      drawIsoLine(mid - gap/2, 0, mid - gap/2, 1, "#f5c518", 1.5);
+      drawIsoLine(mid + gap/2, 0, mid + gap/2, 1, "#f5c518", 1.5);
+      if (def.lanes === 2) {
+        drawIsoLine(mid - q, 0, mid - q, 1, "#fff", 1.5, dashWhite);
+        drawIsoLine(mid + q, 0, mid + q, 1, "#fff", 1.5, dashWhite);
+      }
+    } else {
+      drawIsoLine(mid, 0, mid, 1, "#fff", 1.5, dashWhite);
+      if (def.lanes === 2) {
+        drawIsoLine(mid - q, 0, mid - q, 1, "#fff", 1.5, dashWhite);
+        drawIsoLine(mid + q, 0, mid + q, 1, "#fff", 1.5, dashWhite);
+      }
+    }
+  }
+
+  // ── 4) Sahip Çerçevesi ──
+  ctx.setLineDash([]);
   if (ownerId && ownerId !== "mainroad") {
     const ownerColor = getPlayerColor(ownerId);
     ctx.strokeStyle = ownerColor;
-    ctx.lineWidth = 1.2;
+    ctx.lineWidth = 1.5;
     ctx.globalAlpha = 0.5;
-    ctx.beginPath();
-    ctx.moveTo(sx,      sy - hh);
-    ctx.lineTo(sx + hw, sy);
-    ctx.lineTo(sx,      sy + hh);
-    ctx.lineTo(sx - hw, sy);
-    ctx.closePath();
-    ctx.stroke();
+    drawIsoLine(0, 0, 1, 0, ownerColor, 1.5);
+    drawIsoLine(1, 0, 1, 1, ownerColor, 1.5);
+    drawIsoLine(1, 1, 0, 1, ownerColor, 1.5);
+    drawIsoLine(0, 1, 0, 0, ownerColor, 1.5);
   }
 
   ctx.globalAlpha = 1;
   ctx.restore();
 }
-
 // Şerit çizgilerini çizer
 // isHorizontal=true → xStart→xEnd, ortaY sabit
 // isHorizontal=false → yStart→yEnd, ortaX sabit
