@@ -295,7 +295,7 @@ function drawRoadSegment(gx, gy, rot, def, ownerId) {
   const hw = TILE_W/2 * scale;
   const hh = TILE_H/2 * scale;
   const r  = (rot ?? 0) % 2;
- const sw = Math.max(4, (def.sidewalk || 4) * scale * 0.35);
+  const sw = hh * 0.55; // tile yüksekliğinin %55'i kaldırım — geri kalan asfalt
   // ── 1) Kaldırım — tam tile ──
   ctx.globalAlpha = 1;
   ctx.beginPath();
@@ -311,24 +311,24 @@ function drawRoadSegment(gx, gy, rot, def, ownerId) {
   // rot=0: Yol EW → kaldırım N ve S köşelerinde → asfalt N,S'den inset
   // rot=1: Yol NS → kaldırım E ve W köşelerinde → asfalt E,W'den inset
   let aspPts;
- if (r === 0) {
-  // rot=0: Yol W↔E kenarları arasında uzanır
-  // W kenarı: (sx-hw, sy) → kaldırımdan sw kadar içeri gir
-  // E kenarı: (sx+hw, sy) → kaldırımdan sw kadar içeri gir
-  // Yolun "üst" ve "alt" sınırı: N ve S köşelerinden sw kadar uzaklaş
+
+const t = sw / hh; // kaldırım oranı (0..1)
+
+if (r === 0) {
+  // W kenarından E kenarına, izometrik yüzey üzerinde
   aspPts = [
-    { x: sx - hw,        y: sy - sw },   // W kenarı üst
-    { x: sx + hw,        y: sy - sw },   // E kenarı üst
-    { x: sx + hw,        y: sy + sw },   // E kenarı alt
-    { x: sx - hw,        y: sy + sw },   // W kenarı alt
+    { x: sx - hw + t*hw, y: sy - t*hh },  // sol-üst (W→N yönünde t kadar)
+    { x: sx + hw - t*hw, y: sy - t*hh },  // sağ-üst (E→N yönünde t kadar)
+    { x: sx + hw - t*hw, y: sy + t*hh },  // sağ-alt (E→S yönünde t kadar)
+    { x: sx - hw + t*hw, y: sy + t*hh },  // sol-alt (W→S yönünde t kadar)
   ];
 } else {
-  // rot=1: Yol N↔S kenarları arasında uzanır
+  // N kenarından S kenarına
   aspPts = [
-    { x: sx - sw,        y: sy - hh },   // N kenarı sol
-    { x: sx + sw,        y: sy - hh },   // N kenarı sağ
-    { x: sx + sw,        y: sy + hh },   // S kenarı sağ
-    { x: sx - sw,        y: sy + hh },   // S kenarı sol
+    { x: sx - t*hw, y: sy - hh + t*hh },  // üst-sol (N→W yönünde t kadar)
+    { x: sx + t*hw, y: sy - hh + t*hh },  // üst-sağ (N→E yönünde t kadar)
+    { x: sx + t*hw, y: sy + hh - t*hh },  // alt-sağ (S→E yönünde t kadar)
+    { x: sx - t*hw, y: sy + hh - t*hh },  // alt-sol (S→W yönünde t kadar)
   ];
 }
 
