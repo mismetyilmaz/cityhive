@@ -120,7 +120,8 @@ export async function startGame(roomId) {
 }
 
 // ── TİLE ──────────────────────────────────────────────────────────────────────
-export async function placeTile(roomId, x, y, tileType, cost) {
+// firebase-manager.js içindeki placeTile fonksiyonu
+export async function placeTile(roomId, x, y, tileType, cost, rotation = 0) {
   const user = auth.currentUser;
   if (!user) throw new Error("Giriş yapılmamış");
   const key = `${x},${y}`;
@@ -132,7 +133,6 @@ export async function placeTile(roomId, x, y, tileType, cost) {
 
   const existing = gs.tiles?.[key];
 
-  // Yol tanımlarını import edemeyiz burada, type string'den kontrol
   const isRoadType = tileType.startsWith("road_");
   const existingIsRoad = existing?.type?.startsWith("road_");
 
@@ -146,19 +146,23 @@ export async function placeTile(roomId, x, y, tileType, cost) {
     }
   }
 
-  // Yollar anında yerleşir (building: false), binalar inşaat animasyonuyla
   const isRoad = isRoadType;
 
+  // ARTIK BURADA "rotation" DEĞERİNİ VERİTABANINA KAYDEDİYORUZ
   await update(ref(db, `rooms/${roomId}/gameState`), {
     [`tiles/${key}`]: {
-      type: tileType, ownerId: user.uid, ownerName: user.displayName,
-      builtAt: serverTimestamp(), building: isRoad ? false : true, level: 1
+      type: tileType, 
+      ownerId: user.uid, 
+      ownerName: user.displayName,
+      builtAt: serverTimestamp(), 
+      building: isRoad ? false : true, 
+      level: 1,
+      rotation: isRoad ? rotation : 0 // Yol ise seçilen rotasyonu kaydet
     },
     [`budgets/${user.uid}`]: budget - cost
   });
   return key;
 }
-
 export async function finishBuilding(roomId, key) {
   await update(ref(db, `rooms/${roomId}/gameState/tiles/${key}`), { building: false });
 }

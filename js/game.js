@@ -875,17 +875,20 @@ async function handleBuildClick(gx, gy) {
     const already = Object.values(gameState.tiles || {}).find(t => t.type === selectedTile);
     if (already) { showToast("Bu binanın sadece bir tanesi olabilir", "error"); return; }
   }
-  try {
-    const rot = def.isRoad ? roadRotation : 0;
-    const key = await placeTile(roomId, gx, gy, selectedTile, def.cost, rot);
-    if (def.isRoad) {
-      showToast(`${def.label} yapıldı`, "success");
-      syncCarsToRoads();
-    } else {
-      startBuildAnimation(key);
-      showToast(`${def.label} inşaatı başladı!`, "success");
-    }
-  } catch (err) { showToast(err.message, "error"); }
+  // game.js içindeki handleBuildClick fonksiyonunun ilgili kısmı
+try {
+  const rot = def.isRoad ? roadRotation : 0;
+  // placeTile artık 5. parametre olarak rot değerini veritabanına ulaştıracak
+  const key = await placeTile(roomId, gx, gy, selectedTile, def.cost, rot);
+  
+  if (def.isRoad) {
+    showToast(`${def.label} yapıldı`, "success");
+    syncCarsToRoads();
+  } else {
+    startBuildAnimation(key);
+    showToast(`${def.label} inşaatı başladı!`, "success");
+  }
+} catch (err) { showToast(err.message, "error"); }
 }
 
 async function handleDemolishClick(gx, gy) {
