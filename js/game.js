@@ -295,7 +295,7 @@ function drawRoadSegment(gx, gy, rot, def, ownerId) {
   const hw = TILE_W/2 * scale;
   const hh = TILE_H/2 * scale;
   const r  = (rot ?? 0) % 2;
-  const sw = hh * 0.35;
+  const sw = hh * 0.28;
   // ── 1) Kaldırım — tam tile ──
   ctx.globalAlpha = 1;
   ctx.beginPath();
@@ -315,22 +315,29 @@ function drawRoadSegment(gx, gy, rot, def, ownerId) {
 
 const t = sw / hh;
 
+// İzometrik yüzeye dik birim vektör
+const len = Math.sqrt(hw*hw + hh*hh);
+const nx  = hh / len;   // ≈ 0.447
+const ny  = hw / len;   // ≈ 0.894
+const off = sw * 2;     // şerit yarı genişliği (piksel)
+
 if (r === 0) {
+  // W→E yolu: W=(sx-hw,sy)  E=(sx+hw,sy)
   aspPts = [
-    { x: sx - hw, y: sy - sw },   // W kenarı üst  ← x tam kenarda
-    { x: sx + hw, y: sy - sw },   // E kenarı üst  ← x tam kenarda
-    { x: sx + hw, y: sy + sw },   // E kenarı alt
-    { x: sx - hw, y: sy + sw },   // W kenarı alt
+    { x: sx - hw - nx*off, y: sy - ny*off },  // W üst
+    { x: sx + hw - nx*off, y: sy - ny*off },  // E üst
+    { x: sx + hw + nx*off, y: sy + ny*off },  // E alt
+    { x: sx - hw + nx*off, y: sy + ny*off },  // W alt
   ];
 } else {
+  // N→S yolu: N=(sx,sy-hh)  S=(sx,sy+hh)
   aspPts = [
-    { x: sx - sw, y: sy - hh },   // N kenarı sol  ← y tam kenarda
-    { x: sx + sw, y: sy - hh },   // N kenarı sağ  ← y tam kenarda
-    { x: sx + sw, y: sy + hh },   // S kenarı sağ
-    { x: sx - sw, y: sy + hh },   // S kenarı sol
+    { x: sx - nx*off, y: sy - hh - ny*off },  // N sol
+    { x: sx + nx*off, y: sy - hh + ny*off },  // N sağ  
+    { x: sx + nx*off, y: sy + hh + ny*off },  // S sağ
+    { x: sx - nx*off, y: sy + hh - ny*off },  // S sol
   ];
 }
-
   ctx.beginPath();
   ctx.moveTo(aspPts[0].x, aspPts[0].y);
   for (let i=1; i<4; i++) ctx.lineTo(aspPts[i].x, aspPts[i].y);
